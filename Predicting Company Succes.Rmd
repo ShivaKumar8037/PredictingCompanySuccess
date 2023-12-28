@@ -1,0 +1,582 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(corrplot)
+library(pastecs)
+library(coefplot)
+library(FSelector)
+library(caret)
+library(dplyr)
+library(pROC)
+library(glmnet)
+library(rpart)       # for Decision Tree
+library(randomForest) # for Random Forest
+library(leaflet) 
+```
+
+
+```{r}
+original_data <- read.csv('data.csv')
+original_data
+```
+```{r}
+missing_data <- data.frame(
+  Variable = names(original_data),
+  Missing = colMeans(is.na(original_data)) * 100
+)
+
+# Create a bar plot
+ggplot(missing_data, aes(x = Variable, y = Missing)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(x = "Variable", y = "Percentage Missing") +
+  ggtitle("Missing Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+data <- read.csv('cleaned_testing_data.csv')
+```
+
+```{r}
+data
+```
+
+```{r}
+summary(data)
+```
+```{r}
+m <- leaflet(data) %>%
+  addTiles() %>%
+  addMarkers(~longitude, ~latitude, popup = ~paste("Lat: ", latitude, "<br>Lon: ", longitude))
+
+# Display the map
+m
+```
+
+
+
+```{r}
+numeric_data <- data[sapply(data, is.numeric)]
+
+correlation_matrix <- cor(numeric_data, use = "complete.obs")  
+
+print(correlation_matrix)
+
+corrplot(correlation_matrix, method = "circle")
+```
+
+```{r}
+
+str(numeric_data)
+```
+```{r}
+str(data)
+```
+
+```{r}
+numeric_data
+```
+
+```{r}
+
+```
+
+```{r}
+
+hist(numeric_data$relationships, probability = TRUE, main = "Histogram of Relationships", xlab = 'No. of relationships')
+```
+```{r}
+histogram(numeric_data$funding_rounds, probability = TRUE, main = "Histogram of Funding Rounds", xlab = 'No. of Funding rounds')
+```
+```{r}
+
+
+
+
+library(reshape2)
+
+melted_data <- melt(numeric_data[, c("is_software", "is_web", "is_enterprise", "is_mobile", 
+                                     "is_advertising", "is_gamesvideo", "is_ecommerce", 
+                                     "is_biotech", "is_consulting", "is_othercategory")])
+
+
+melted_data_yes <- subset(melted_data, value == 1)
+
+
+ggplot(data = melted_data_yes, aes(x = variable)) +
+  geom_bar() +
+  labs(title = "Bar Chart for Company Categories",
+       x = "Category", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+```{r}
+
+melted_data <- melt(numeric_data[, c("is_CA", "is_NY", "is_MA", "is_TX")])
+
+
+melted_data_yes <- subset(melted_data, value == 1)
+
+
+ggplot(data = melted_data_yes, aes(x = variable)) +
+  geom_bar() +
+  labs(title = "Bar Chart for Company Presence by State ",
+       x = "State", y = "Count") +
+  theme_minimal()
+```
+
+
+```{r}
+
+summary(numeric_data)
+
+sapply(numeric_data, function(x) sum(is.na(x)))
+
+stat.desc(numeric_data)
+
+for(col in names(numeric_data[sapply(numeric_data, is.numeric)])) {
+    ggplot(numeric_data, aes_string(x=col)) + geom_histogram(bins=30) + theme_minimal() + ggtitle(paste("Distribution of", col))
+}
+
+```
+```{r}
+
+```
+
+```{r}
+
+
+for(col in names(numeric_data[sapply(numeric_data, is.numeric)])) {
+    if(col != "labels") {
+        ggplot(numeric_data, aes_string(x="labels", y=col)) + geom_boxplot() + theme_minimal() + ggtitle(paste(col, "vs labels"))
+    }
+}
+
+
+correlation_matrix <- cor(numeric_data[sapply(numeric_data, is.numeric)][, -which(names(numeric_data) == "labels")], use="complete.obs")
+corrplot::corrplot(correlation_matrix, method = "circle")
+
+table(numeric_data$labels)
+
+```
+```{r}
+
+```
+
+```{r}
+features <- numeric_data[, -which(names(numeric_data) == "labels")]
+target <- numeric_data$labels
+
+
+model <- lm(target ~ ., data = features)
+```
+
+
+```{r}
+summary(model)
+```
+
+
+
+```{r}
+coefplot(model)
+```
+
+
+```{r}
+
+library(car)
+
+
+variables_to_keep <- c("relationships", "milestones", "is_CA", "is_NY", "is_MA", "is_TX", "is_otherstate", "avg_participants", "is_top500")
+
+
+formula <- as.formula(paste("target ~", paste(variables_to_keep, collapse = " + ")))
+
+
+temp_model <- lm(formula, data = numeric_data)
+vif_results <- vif(temp_model)
+print(vif_results)
+
+
+logistic_model <- glm(formula, data = numeric_data, family = binomial())
+summary(logistic_model)
+
+```
+
+```{r}
+
+# Predictions
+predictions_prob <- predict(logistic_model, type = "response") # Probabilities
+predictions <- ifelse(predictions_prob > 0.5, 1, 0) # Classifications
+
+# Actual values
+actual <- numeric_data$labels
+
+# Confusion Matrix
+confusion_matrix <- table(Predicted = predictions, Actual = actual)
+
+# Accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+# Precision, Recall, and F1 Score
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# AUC-ROC
+library(pROC)
+roc_result <- roc(actual, predictions_prob)
+auc_roc <- auc(roc_result)
+
+# Print metrics
+cat("Accuracy:", accuracy, "\nPrecision:", precision, "\nRecall:", recall, "\nF1 Score:", f1_score, "\nAUC-ROC:", auc_roc, "\n")
+
+```
+```{r}
+features <- features %>% select(-longitude, -latitude)
+```
+
+
+```{r}
+# Perform feature selection using Lasso
+glmnet_fit <- cv.glmnet(x = as.matrix(features), y = target)
+
+# Find the optimal lambda value
+optimal_lambda <- glmnet_fit$lambda.min
+
+# Extract selected features using the optimal lambda
+selected_features <- coef(glmnet_fit, s = optimal_lambda, exact = TRUE)
+```
+```{r}
+selected_features
+```
+
+
+
+```{r Models after data cleaning}
+logistic_model <- glm(target ~ age_last_milestone_year + relationships + milestones + is_MA + is_otherstate + is_enterprise + has_VC + has_roundB + has_roundD + avg_participants + is_top500, data = numeric_data, family = "binomial")
+predictions_prob <- predict(logistic_model, type = "response") # Probabilities
+predictions <- ifelse(predictions_prob > 0.5, 1, 0) # Classifications
+# Actual values
+actual <- numeric_data$labels
+
+# Confusion Matrix
+confusion_matrix <- table(Predicted = predictions, Actual = actual)
+
+# Accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+# Precision, Recall, and F1 Score
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# AUC-ROC
+
+roc_result <- roc(actual, predictions_prob)
+auc_roc <- auc(roc_result)
+
+# Print metrics
+cat("Accuracy:", accuracy, "\nPrecision:", precision, "\nRecall:", recall, "\nF1 Score:", f1_score, "\nAUC-ROC:", auc_roc, "\n")
+
+```
+
+```{r}
+length(predictions)
+length(actual)
+```
+
+```{r}
+numeric_data$target
+```
+
+```{r}
+str(numeric_data)
+```
+```{r}
+# Scale all features except the target variable 'labels'
+df_scaled <- numeric_data
+df_scaled[-which(names(df_scaled) == "labels")] <- scale(numeric_data[-which(names(numeric_data) == "labels")])
+
+
+
+```
+
+```{r}
+df_scaled
+```
+
+```{r}
+df_scaled$labels <- as.factor(df_scaled$labels)
+
+```
+
+
+```{r Model on DF Scaled}
+
+library(pROC)
+
+
+logistic_model <- glm(labels ~ age_last_milestone_year + relationships + milestones + is_MA + is_otherstate + is_enterprise + has_VC + has_roundB + has_roundD + avg_participants + is_top500, data = df_scaled, family = "binomial")
+
+# Making predictions
+predictions_prob <- predict(logistic_model, type = "response") # Probabilities
+predictions <- ifelse(predictions_prob > 0.5, 1, 0) # Classifications
+
+# Actual values
+actual <- df_scaled$labels
+
+# Confusion Matrix
+confusion_matrix <- table(Predicted = predictions, Actual = actual)
+
+# Calculate metrics
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# AUC-ROC
+roc_result <- roc(response = actual, predictor = as.numeric(predictions_prob), levels = c("0", "1"))
+auc_roc <- auc(roc_result)
+
+# Print metrics
+cat("Accuracy:", accuracy, "\nPrecision:", precision, "\nRecall:", recall, "\nF1 Score:", f1_score, "\nAUC-ROC:", auc_roc, "\n")
+
+```
+```{r}
+# Ensuring that x is a matrix
+x <- as.matrix(df_scaled[, -which(names(df_scaled) == "labels")])
+
+# Ensure y is a numeric vector
+y <- as.numeric(df_scaled$labels) - 1
+
+```
+
+
+
+
+
+```{r}
+# Fit Lasso and Ridge models
+model_lasso <- glmnet(x, y, family = "binomial", alpha = 1)
+model_ridge <- glmnet(x, y, family = "binomial", alpha = 0)
+
+# Cross-validation for Lasso and Ridge
+cv_lasso <- cv.glmnet(x, y, family = "binomial", alpha = 1)
+best_lambda_lasso <- cv_lasso$lambda.min
+
+cv_ridge <- cv.glmnet(x, y, family = "binomial", alpha = 0)
+best_lambda_ridge <- cv_ridge$lambda.min
+
+# Predict probabilities
+prob_lasso <- predict(model_lasso, s = best_lambda_lasso, newx = x, type = "response")
+prob_ridge <- predict(model_ridge, s = best_lambda_ridge, newx = x, type = "response")
+
+# Convert to binary classification
+predictions_lasso <- ifelse(prob_lasso > 0.5, 1, 0)
+predictions_ridge <- ifelse(prob_ridge > 0.5, 1, 0)
+
+
+```
+
+
+
+
+```{r}
+
+
+
+# Confusion Matrix for Lasso
+confusionMatrix(as.factor(predictions_lasso), as.factor(y))
+
+# Confusion Matrix for Ridge
+confusionMatrix(as.factor(predictions_ridge), as.factor(y))
+
+# ROC and AUC for Lasso
+roc_lasso <- roc(response = as.factor(y), predictor = as.numeric(prob_lasso))
+auc_lasso <- auc(roc_lasso)
+plot(roc_lasso, main = "ROC for Lasso")
+
+# ROC and AUC for Ridge
+roc_ridge <- roc(response = as.factor(y), predictor = as.numeric(prob_ridge))
+auc_ridge <- auc(roc_ridge)
+plot(roc_ridge, main = "ROC for Ridge")
+
+# Print AUC values
+cat("AUC for Lasso: ", auc_lasso, "\n")
+cat("AUC for Ridge: ", auc_ridge, "\n")
+
+
+
+```
+
+RFE in python: 
+
+
+latitude: The latitude value.
+longitude: The longitude value.
+age_last_funding_year: The age in years since the last funding.
+age_first_milestone_year: The age in years since the first milestone.
+age_last_milestone_year: The age in years since the last milestone.
+relationships: A feature related to relationships.
+funding_total_usd: Total funding in USD.
+milestones: A feature related to milestones.
+avg_participants: Average number of participants
+
+```{r}
+
+important_features <- c( "latitude", "longitude", "age_last_funding_year", 
+                        "age_first_milestone_year", "age_last_milestone_year", "relationships", 
+                        "funding_total_usd", "milestones", "avg_participants")
+
+
+x <- as.matrix(df_scaled[, important_features])
+y <- as.numeric(df_scaled$labels) - 1
+
+
+# Fit Lasso and Ridge models
+model_lasso <- glmnet(x, y, family = "binomial", alpha = 1)
+model_ridge <- glmnet(x, y, family = "binomial", alpha = 0)
+
+# Cross-validation for Lasso and Ridge
+cv_lasso <- cv.glmnet(x, y, family = "binomial", alpha = 1)
+best_lambda_lasso <- cv_lasso$lambda.min
+
+cv_ridge <- cv.glmnet(x, y, family = "binomial", alpha = 0)
+best_lambda_ridge <- cv_ridge$lambda.min
+
+# Predict probabilities
+prob_lasso <- predict(model_lasso, s = best_lambda_lasso, newx = x, type = "response")
+prob_ridge <- predict(model_ridge, s = best_lambda_ridge, newx = x, type = "response")
+
+# Convert to binary classification
+predictions_lasso <- ifelse(prob_lasso > 0.5, 1, 0)
+predictions_ridge <- ifelse(prob_ridge > 0.5, 1, 0)
+
+
+
+
+
+
+confusionMatrix(as.factor(predictions_lasso), as.factor(y))
+confusionMatrix(as.factor(predictions_ridge), as.factor(y))
+
+# ROC and AUC for Lasso
+roc_lasso <- roc(response = as.factor(y), predictor = as.numeric(prob_lasso))
+auc_lasso <- auc(roc_lasso)
+plot(roc_lasso, main = "ROC for Lasso")
+
+# ROC and AUC for Ridge
+roc_ridge <- roc(response = as.factor(y), predictor = as.numeric(prob_ridge))
+auc_ridge <- auc(roc_ridge)
+plot(roc_ridge, main = "ROC for Ridge")
+
+
+cat("AUC for Lasso: ", auc_lasso, "\n")
+cat("AUC for Ridge: ", auc_ridge, "\n")
+
+```
+
+```{r Random Forest for All the features}
+library(randomForest)
+library(caret)
+
+
+x <- as.matrix(df_scaled[, -which(names(df_scaled) == "labels")])
+y <- as.factor(df_scaled$labels)
+
+
+set.seed(123) 
+trainIndex <- createDataPartition(y, p = .8, list = FALSE)
+x_train <- x[trainIndex, ]
+y_train <- y[trainIndex]
+x_test <- x[-trainIndex, ]
+y_test <- y[-trainIndex]
+
+
+model_rf <- randomForest(x_train, y_train)
+
+
+rf_pred <- predict(model_rf, x_test)
+
+# Confusion Matrix and Evaluation Metrics
+conf_matrix_rf <- table(Predicted = rf_pred, Actual = y_test)
+
+# Calculate Metrics
+accuracy <- sum(diag(conf_matrix_rf)) / sum(conf_matrix_rf)
+precision <- conf_matrix_rf[2,2] / sum(conf_matrix_rf[2,])
+recall <- conf_matrix_rf[2,2] / sum(conf_matrix_rf[,2])
+f1_score <- ifelse((precision + recall) > 0, 2 * ((precision * recall) / (precision + recall)), 0)
+
+# Results
+cat("Confusion Matrix:\n")
+print(conf_matrix_rf)
+cat("\nAccuracy:", accuracy, "\nPrecision:", precision, "\nRecall:", recall, "\nF1 Score:", f1_score, "\n")
+
+```
+
+```{r Decision Trees}
+library(rpart)
+
+
+model_dt <- rpart(y_train ~ ., data = data.frame(x_train, y_train))
+
+
+x_test_df <- data.frame(x_test)
+
+
+dt_pred <- predict(model_dt, newdata = x_test_df, type = "class")
+
+
+conf_matrix_dt <- table(Predicted = dt_pred, Actual = y_test)
+
+
+accuracy_dt <- sum(diag(conf_matrix_dt)) / sum(conf_matrix_dt)
+precision_dt <- conf_matrix_dt[2,2] / sum(conf_matrix_dt[2,])
+recall_dt <- conf_matrix_dt[2,2] / sum(conf_matrix_dt[,2])
+f1_score_dt <- ifelse((precision_dt + recall_dt) > 0, 2 * ((precision_dt * recall_dt) / (precision_dt + recall_dt)), 0)
+
+cat("Confusion Matrix:\n")
+print(conf_matrix_dt)
+cat("\nAccuracy:", accuracy_dt, "\nPrecision:", precision_dt, "\nRecall:", recall_dt, "\nF1 Score:", f1_score_dt, "\n")
+
+```
+```{r}
+x <- as.matrix(df_scaled[, important_features])
+y <- as.factor(df_scaled$labels) 
+
+set.seed(123) 
+trainIndex <- createDataPartition(y, p = .8, list = FALSE)
+x_train <- x[trainIndex, ]
+y_train <- y[trainIndex]
+x_test <- x[-trainIndex, ]
+y_test <- y[-trainIndex]
+
+
+model_rf <- randomForest(x_train, y_train)
+
+
+rf_pred <- predict(model_rf, x_test)
+
+
+conf_matrix_rf <- table(Predicted = rf_pred, Actual = y_test)
+
+# Calculate Metrics
+accuracy <- sum(diag(conf_matrix_rf)) / sum(conf_matrix_rf)
+precision <- conf_matrix_rf[2,2] / sum(conf_matrix_rf[2,])
+recall <- conf_matrix_rf[2,2] / sum(conf_matrix_rf[,2])
+f1_score <- ifelse((precision + recall) > 0, 2 * ((precision * recall) / (precision + recall)), 0)
+
+# Results
+cat("Confusion Matrix:\n")
+print(conf_matrix_rf)
+cat("\nAccuracy:", accuracy, "\nPrecision:", precision, "\nRecall:", recall, "\nF1 Score:", f1_score, "\n")
+
+```
+
