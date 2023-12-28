@@ -1,4 +1,4 @@
-# Predictive Modeling of Company Success 🏭
+# Predictive Modeling of Company Success 🏭_
 
 ## Introduction
 
@@ -12,6 +12,8 @@ We aim to harness predictive modeling to sift through extensive datasets and une
 ## Data Source
 
 Our dataset, sourced from Kaggle, is titled 'Startup Success Prediction' and comprises 923 rows and 49 columns, focusing on aspects like funding, operations, and company status.
+
+> **Stack used: R and it's Libraries.**
 
 ## Methodology
 
